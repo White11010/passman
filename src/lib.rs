@@ -1,3 +1,4 @@
+use std::{fs, io};
 use std::fs::File;
 use std::io::Write;
 
@@ -12,7 +13,7 @@ pub enum Command {
 #[derive(Debug)]
 pub struct Config {
     pub command: Command,
-    pub resource: String,
+    pub resource: Option<String>,
 }
 
 impl Config {
@@ -27,10 +28,13 @@ impl Config {
         };
         let resource = match command {
             Command::Insert => match args.get(2) {
-                Some(r) => r.clone(),
+                Some(r) => Some(r.clone()),
                 None => return Err("resource not found"),
             },
-            Command::Show => String::from(args.get(1).unwrap()),
+            Command::Show => match args.get(2) {
+                None => None,
+                Some(r) => Some(r.clone())
+            },
         };
 
         Ok(Config {
@@ -41,20 +45,39 @@ impl Config {
 }
 
 pub fn run(config: Config) -> Result<(), std::io::Error> {
+    create_store_dir()?;
+
     match config.command {
-        Command::Show => {
-            println!("{}", config.resource);
-            Ok(())
+        Command::Show => match config.resource {
+            None => {
+                show_all_passwords();
+                Ok(())
+            },
+            Some(r) => {
+                show_password(&r);
+                Ok(())
+            }
         },
         Command::Insert => {
             let login = get_user_input(UserInputType::Login);
             let password = get_user_input(UserInputType::Password);
             let data_to_write = format!("{}\n{}", login, password);
-            create_file(&config.resource, data_to_write)
+            create_file(&config.resource.unwrap(), data_to_write)
         }
     }
 }
 
+fn show_all_passwords() {
+    println!("show_all_passwords");
+}
+fn show_password(resource: &str) {
+    println!("show_password {}", resource);
+}
+
+const STORE_DIR: &str = ".passman-password-store";
+fn create_store_dir() ->  io::Result<()> {
+    fs::create_dir_all(STORE_DIR)
+}
 
 enum UserInputType {
     Login,
@@ -79,7 +102,7 @@ fn get_user_input(input_type: UserInputType) -> String {
 }
 
 fn create_file(file_name: &str, data: String) -> std::io::Result<()> {
-    let mut file = File::create(file_name)?;
+    let mut file = File::create(format!("{}/{}", STORE_DIR ,file_name))?;
 
     file.write_all(data.as_bytes())?;
     Ok(())
