@@ -68,10 +68,14 @@ pub fn run(config: Config) -> Result<(), std::io::Error> {
 }
 
 fn show_all_passwords() {
-    println!("show_all_passwords");
+    let resources = fs::read_dir(STORE_DIR).unwrap();
+    for resource in resources {
+        println!("{}", resource.unwrap().file_name().to_str().unwrap())
+    }
 }
 fn show_password(resource: &str) {
-    println!("show_password {}", resource);
+    let contents = fs::read_to_string(format!("{}/{}", STORE_DIR, resource)).expect("Should have been able to read the file");
+    println!("credits for {}:\n{}", resource, contents);
 }
 
 const STORE_DIR: &str = ".passman-password-store";
