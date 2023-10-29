@@ -1,113 +1,79 @@
-use std::{fs, io};
-use std::fs::File;
-use std::io::Write;
+use std::io::{Write, stdout};
+use std::{process, thread};
+use std::time::Duration;
+use bcrypt::BcryptError;
+use cli_clipboard::{ClipboardContext, ClipboardProvider};
 
-const INSERT_COMMAND: &str = "insert";
-
-#[derive(Debug)]
-pub enum Command {
-    Insert,
-    Show,
-}
-
-#[derive(Debug)]
-pub struct Config {
-    pub command: Command,
-    pub resource: Option<String>,
-}
-
-impl Config {
-    pub fn build(args: &[String]) -> Result<Config, &'static str> {
-        if args.len() < 2 {
-            return Err("no arguments");
-        }
-
-        let command = match args[1].as_str() {
-            INSERT_COMMAND => Command::Insert,
-            _ => Command::Show
-        };
-        let resource = match command {
-            Command::Insert => match args.get(2) {
-                Some(r) => Some(r.clone()),
-                None => return Err("resource not found"),
-            },
-            Command::Show => match args.get(2) {
-                None => None,
-                Some(r) => Some(r.clone())
-            },
-        };
-
-        Ok(Config {
-            command,
-            resource,
-        })
+pub fn run() {
+    let master_password = get_master_password();
+    if master_password.len() == 0 {
+        println!("WARNING! You typed empty master password!")
     }
+
+    let account = get_account_name();
+
+    let data_to_encode = format!("{}{}", master_password.trim_end(), account.trim_end());
+
+    let hashed_password = get_hashed_password(data_to_encode).unwrap_or_else(|err| {
+        eprintln!("Error during hashing: {}", err);
+        process::exit(1);
+    });
+
+
+    let encoded_password = get_encoded_password(hashed_password);
+
+    set_password_to_clipboard(encoded_password);
 }
 
-pub fn run(config: Config) -> Result<(), std::io::Error> {
-    create_store_dir()?;
-
-    match config.command {
-        Command::Show => match config.resource {
-            None => {
-                show_all_passwords();
-                Ok(())
-            },
-            Some(r) => {
-                show_password(&r);
-                Ok(())
-            }
-        },
-        Command::Insert => {
-            let login = get_user_input(UserInputType::Login);
-            let password = get_user_input(UserInputType::Password);
-            let data_to_write = format!("{}\n{}", login, password);
-            create_file(&config.resource.unwrap(), data_to_write)
-        }
-    }
+fn get_master_password() -> String {
+    rpassword::prompt_password("Master password: ").unwrap()
 }
 
-fn show_all_passwords() {
-    let resources = fs::read_dir(STORE_DIR).unwrap();
-    for resource in resources {
-        println!("{}", resource.unwrap().file_name().to_str().unwrap())
-    }
-}
-fn show_password(resource: &str) {
-    let contents = fs::read_to_string(format!("{}/{}", STORE_DIR, resource)).expect("Should have been able to read the file");
-    println!("credits for {}:\n{}", resource, contents);
-}
+fn get_account_name() -> String {
+    print!("Account: ");
+    stdout().flush().unwrap();
 
-const STORE_DIR: &str = ".passman-password-store";
-fn create_store_dir() ->  io::Result<()> {
-    fs::create_dir_all(STORE_DIR)
-}
-
-enum UserInputType {
-    Login,
-    Password
-}
-fn get_user_input(input_type: UserInputType) -> String {
-    let requested_data = match input_type {
-        UserInputType::Login => "login",
-        UserInputType::Password => "password"
-    };
-
-    print!("Type {}: ", requested_data);
-    std::io::stdout().flush().unwrap();
-
-    let mut result = String::new();
-
+    let mut input_result = String::new();
     std::io::stdin()
-        .read_line(&mut result)
+        .read_line(&mut input_result)
         .expect("Failed to read line");
 
-    result
+    input_result
 }
 
-fn create_file(file_name: &str, data: String) -> std::io::Result<()> {
-    let mut file = File::create(format!("{}/{}", STORE_DIR ,file_name))?;
-
-    file.write_all(data.as_bytes())?;
-    Ok(())
+fn get_hashed_password(data: String) -> Result<String, BcryptError> {
+    let hashed_password = bcrypt::hash_with_salt(data, 11, [7; 16])?.to_string();
+    let hash = hashed_password.split("$")
+        .nth(3)
+        .unwrap()
+        .chars()
+        .skip(22)
+        .take(16)
+        .collect();
+    Ok(hash)
 }
+
+fn get_encoded_password(data: String) -> String {
+    base85::encode(data.as_bytes())
+}
+
+fn set_password_to_clipboard(password: String) {
+    let mut ctx = ClipboardContext::new().unwrap();
+    ctx.set_contents(password).unwrap();
+
+    let mut stdout = stdout();
+
+    for i in 1..=15 {
+        let seconds_left = match 15 - i {
+            d if d < 10 => format!("0{}", d),
+            d if d >= 10 => format!("{}", d),
+            _ => format!("")
+        };
+        print!("\rIn clipboard! {}", seconds_left);
+        stdout.flush().unwrap();
+        thread::sleep(Duration::from_secs(1));
+    }
+
+    ctx.clear().unwrap();
+}
+
