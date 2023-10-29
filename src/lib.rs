@@ -6,7 +6,7 @@ use cli_clipboard::{ClipboardContext, ClipboardProvider};
 
 pub fn run() {
     let master_password = get_master_password();
-    if master_password.len() == 0 {
+    if master_password.is_empty() {
         println!("WARNING! You typed empty master password!")
     }
 
@@ -43,7 +43,7 @@ fn get_account_name() -> String {
 
 fn get_hashed_password(data: String) -> Result<String, BcryptError> {
     let hashed_password = bcrypt::hash_with_salt(data, 11, [7; 16])?.to_string();
-    let hash = hashed_password.split("$")
+    let hash = hashed_password.split('$')
         .nth(3)
         .unwrap()
         .chars()
@@ -67,7 +67,7 @@ fn set_password_to_clipboard(password: String) {
         let seconds_left = match 15 - i {
             d if d < 10 => format!("0{}", d),
             d if d >= 10 => format!("{}", d),
-            _ => format!("")
+            _ => String::new()
         };
         print!("\rIn clipboard! {}", seconds_left);
         stdout.flush().unwrap();
